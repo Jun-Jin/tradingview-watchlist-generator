@@ -6,23 +6,25 @@ import ftplib
 DELIMITER = '|'
 
 def main():
-    getNasdaqTickerInfo()
+    nasdaq_list = download_nasdaq_tickers_info_string().split("\n")[1:-2]
+    nasdaq_symbols = extract_symbols_only(nasdaq_list)
+    open('nasdaq_tickers.txt', 'w').write("\n".join(nasdaq_symbols))
 
-def getNasdaqTickerInfo():
+def download_nasdaq_tickers_info_string(target = 'nasdaq'):
     # Download & assign to variable from ftp server.
     ftp = ftplib.FTP(host = 'ftp.nasdaqtrader.com', user = 'anonymous', passwd = 'anonymous@debian.org')
-    ftp.cwd("/SymbolDirectory")
+    ftp.cwd('/SymbolDirectory')
     byte_array = bytearray()
-    ftp.retrbinary('RETR ' + "nasdaqlisted.txt", byte_array.extend)
+    ftp.retrbinary('RETR ' + "%slisted.txt" % target, byte_array.extend)
     ftp.quit()
 
-    # To String.
-    lines = byte_array.decode().split("\n")[1:-2]
-    # To list.
-    tickers = [l.split(DELIMITER)[0] for l in lines]
+    # youcan add others by pass the argumet as "other" or "all".
 
-    # Write to file.
-    open("tickers.txt","w").write("\n".join(tickers))
+    # To String.
+    return byte_array.decode()
+
+def extract_symbols_only(tickers_list):
+    return [l.split(DELIMITER)[0] for l in tickers_list]
 
 if __name__ == '__main__':
     main()
