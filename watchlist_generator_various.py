@@ -4,13 +4,15 @@
 import json
 import os
 from operator import itemgetter
+import sys
+import unicodedata
 
 from bs4 import BeautifulSoup
 import pandas as pd
 import requests
 
 
-def main():
+def main(intermediate=False):
     # read from json files
     src_dir = os.path.join(os.getcwd(), 'resources', 'market')
 
@@ -22,15 +24,24 @@ def main():
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
 
-    # loop for every market from table html
-    for name, info in standard.items():
-        li = get_symbol_list_from_table_html(name, info)
-        write_to_file(output_dir, name, li)
+    rich_output = {}
 
-    # loop for every market from raw html
+    # stock every market from table html
+    for name, info in standard.items():
+        rich_output[name] = get_symbol_list_from_table_html(name, info)
+
+    # stock every market from table html
     for name, info in line.items():
-        li = get_symbol_list_from_raw_html(info)
-        write_to_file(output_dir, name, li)
+        rich_output[name] = get_symbol_list_from_raw_html(info)
+
+    # write everything
+    for market, data in rich_output.items():
+        li = [i[0] for i in data]
+        write_to_file(output_dir, market, li)
+
+    if intermediate == True:
+        fname = os.path.join(os.path.join(output_dir, "all.json"))
+        open(fname, 'w').write(json.dumps(rich_output, ensure_ascii=False))
         
 
 def read_json(src_dir, fname):
@@ -43,12 +54,12 @@ def get_symbol_list_from_table_html(name, info):
     Get ticker symbol tables from url, and converting it into list type object.
     Args:
         name: str  : Name of market.
-        info: dict : Informations of specific market. Include region, url, column.
+        info: dict : Informations of specific market. Include region, url, columns.
     Returns:
         A list of ticker symbols
     """
 
-    region, url, column = itemgetter('region', 'url', 'column')(info)
+    region, url, columns = itemgetter('region', 'url', 'columns')(info)
 
     tb_list = pd.read_html(url)
     # get table
@@ -61,8 +72,10 @@ def get_symbol_list_from_table_html(name, info):
     else:
         tb = tb_list[1]
 
-    symbol_list = list(tb.iloc[:, column].apply(str))
-    return _append_postfix_to_symbol(symbol_list, region)
+    tb = tb[columns].astype(str)
+    if region == 'jp':
+        tb.iloc[:, 0] = tb.iloc[:, 0].apply(lambda x: x + '.T')
+    return list(map(tuple, tb.to_numpy()))
 
 
 def get_symbol_list_from_raw_html(info):
@@ -82,10 +95,9 @@ def get_symbol_list_from_raw_html(info):
         print("Error fetching page")
         exit()
     soup = BeautifulSoup(r.content, "html.parser")
-    links = soup.find_all('a')
-
-    symbol_list = [l.string.split(' ')[0] for l in links[slice(*indices)]]
-    return _append_postfix_to_symbol(symbol_list, region)
+    links = soup.find_all('a')[slice(*indices)]
+    symbols_list = [tuple(unicodedata.normalize("NFKD", l.string).split(' / ')) for l in links]
+    return [tuple([s[0] + '.T', s[1]]) for s in symbols_list]
 
 
 def write_to_file(output_dir, market_name, symbol_list, seperator='\n'):
@@ -104,12 +116,9 @@ def write_to_file(output_dir, market_name, symbol_list, seperator='\n'):
     open(fname, 'w').write(seperator.join(symbol_list))
 
 
-def _append_postfix_to_symbol(symbol_list, region, postfix = '.T'):
-    if region == 'jp':
-        symbol_list = [ i + postfix for i in symbol_list]
-    return symbol_list
-
-
 if __name__ == '__main__':
-    main()
+    if len(sys.argv)  > 1 and sys.argv[1] == '-i':
+        main(True)
+    else:
+        main()
 
