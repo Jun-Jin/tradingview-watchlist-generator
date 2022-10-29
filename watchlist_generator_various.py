@@ -117,8 +117,11 @@ def write_to_file(output_dir, market_name, symbol_list, seperator='\n'):
 
 
 if __name__ == '__main__':
-    if len(sys.argv)  > 1 and sys.argv[1] == '-i':
-        main(True)
+    if len(sys.argv)  > 1:
+        if sys.argv[1] in ['-i', '--intermediate']:
+            main(True)
+        else:
+            print("usage: python3 %s [-i|--intermediate]" % sys.argv[0])
     else:
         main()
 
