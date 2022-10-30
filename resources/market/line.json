@@ -1,11 +1,9 @@
 {
     "line-a": {
-        "region": "jp",
         "url": "https://line-sec.co.jp/contents/stock-1005-A.html",
         "indices": [2, 585]
     },
     "line-b": {
-        "region": "jp",
         "url": "https://line-sec.co.jp/contents/stock-1005-B.html",
         "indices": [2, 955]
     }

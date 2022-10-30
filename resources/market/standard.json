@@ -1,31 +1,25 @@
 {
-    "nikkei255": {
-        "region" : "jp",
+    "nikkei225": {
         "url": "https://site1.sbisec.co.jp/ETGate/?OutSide=on&_ControlID=WPLETmgR001Control&_PageID=WPLETmgR001Mdtl20&_DataStoreID=DSWPLETmgR001Control&_ActionID=DefaultAID&getFlg=on&burl=search_market&cat1=market&cat2=none&dir=info&file=market_meigara_225.html",
         "columns": ["銘柄コード", "銘柄名"]
     },
-    "nikkei400": {
-        "region": "jp",
+    "jpx400": {
         "url": "https://www.sbisec.co.jp/ETGate/?OutSide=on&_ControlID=WPLETmgR001Control&_PageID=WPLETmgR001Mdtl20&_DataStoreID=DSWPLETmgR001Control&_ActionID=DefaultAID&getFlg=on&burl=search_market&cat1=market&cat2=none&dir=info&file=market_meigara_400.html", 
         "columns": ["銘柄コード", "銘柄名"]
     },
     "topix": {
-        "region": "jp",
         "url":    "https://search.sbisec.co.jp/v2/popwin/info/stock/pop690_topix100.html",
         "columns": ["銘柄 コード", "銘柄名"]
     },
     "sp500": {
-        "region": "na",
         "url": "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies",
         "columns": ["Symbol", "Security"]
     },
     "nasdaq100":{
-        "region": "na",
         "url": "https://en.wikipedia.org/wiki/Nasdaq-100",
         "columns": ["Ticker", "Company"]
     },
     "dow":  {    
-        "region": "na",
         "url": "https://en.wikipedia.org/wiki/Dow_Jones_Industrial_Average",
         "columns": ["Symbol", "Company"]
     }

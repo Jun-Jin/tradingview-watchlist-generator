@@ -3,8 +3,8 @@
 
 import json
 import os
-from operator import itemgetter
 import sys
+from operator import itemgetter
 import unicodedata
 
 from bs4 import BeautifulSoup
@@ -12,36 +12,45 @@ import pandas as pd
 import requests
 
 
-def main(intermediate=False):
+def main(is_full_version=False):
     # read from json files
     src_dir = os.path.join(os.getcwd(), 'resources', 'market')
 
-    standard = read_json(src_dir, 'standard.json')
-    line = read_json(src_dir, 'line.json')
-
     # create 'output' dir if not exists
-    output_dir = os.path.join(os.getcwd(), 'output')
+    output_dir = os.path.join(os.getcwd(), 'intermediate')
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
 
     rich_output = {}
+    mini_output = []
 
     # stock every market from table html
+    __rich_len = 0
+    standard = read_json(src_dir, 'standard.json')
     for name, info in standard.items():
         rich_output[name] = get_symbol_list_from_table_html(name, info)
+        __rich_len += len(rich_output[name])
+        rich_output[name] = appnend_postfix_jp(name, rich_output[name])
+        mini_output = list(set(mini_output + [t[0] for t in rich_output[name]]))
 
-    # stock every market from table html
-    for name, info in line.items():
-        rich_output[name] = get_symbol_list_from_raw_html(info)
+    if is_full_version:
+        # stock every market from table html
+        line = read_json(src_dir, 'line.json')
+        for name, info in line.items():
+            rich_output[name] = get_symbol_list_from_raw_html(info)
+            rich_output[name] = appnend_postfix_jp(name, rich_output[name])
 
     # write everything
     for market, data in rich_output.items():
-        li = [i[0] for i in data]
-        write_to_file(output_dir, market, li)
+        symbol_list = [i[0] for i in data]
+        write_to_file(output_dir, market, symbol_list)
 
-    if intermediate == True:
-        fname = os.path.join(os.path.join(output_dir, "all.json"))
-        open(fname, 'w').write(json.dumps(rich_output, ensure_ascii=False))
+    fname = os.path.join(output_dir, "all.json")
+    open(fname, 'w').write(json.dumps(rich_output, ensure_ascii=False))
+    print("intermediate/all.json include %d tickers" % __rich_len)
+    fname = os.path.join(output_dir, "mini.json")
+    open(fname, 'w').write(json.dumps(mini_output, ensure_ascii=False))
+    print("intermediate/mini.json include %d tickers" % len(mini_output))
         
 
 def read_json(src_dir, fname):
@@ -54,12 +63,12 @@ def get_symbol_list_from_table_html(name, info):
     Get ticker symbol tables from url, and converting it into list type object.
     Args:
         name: str  : Name of market.
-        info: dict : Informations of specific market. Include region, url, columns.
+        info: dict : Informations of specific market. Include url, columns.
     Returns:
         A list of ticker symbols
     """
 
-    region, url, columns = itemgetter('region', 'url', 'columns')(info)
+    url, columns = itemgetter('url', 'columns')(info)
 
     tb_list = pd.read_html(url)
     # get table
@@ -73,8 +82,6 @@ def get_symbol_list_from_table_html(name, info):
         tb = tb_list[1]
 
     tb = tb[columns].astype(str)
-    if region == 'jp':
-        tb.iloc[:, 0] = tb.iloc[:, 0].apply(lambda x: x + '.T')
     return list(map(tuple, tb.to_numpy()))
 
 
@@ -83,12 +90,12 @@ def get_symbol_list_from_raw_html(info):
     Get ticker symbol tables from url(raw html), and scraping & convert it into list type object.
     Args:
         name: str  : Name of market.
-        info: dict : Informations of specific market. Include region, url, indices.
+        info: dict : Informations of specific market. Include url, indices.
     Returns:
         A list of ticker symbols
     """
 
-    region, url, indices = itemgetter('region', 'url', 'indices')(info)
+    url, indices = itemgetter('url', 'indices')(info)
 
     r = requests.get(url)
     if r.status_code != 200:
@@ -97,7 +104,13 @@ def get_symbol_list_from_raw_html(info):
     soup = BeautifulSoup(r.content, "html.parser")
     links = soup.find_all('a')[slice(*indices)]
     symbols_list = [tuple(unicodedata.normalize("NFKD", l.string).split(' / ')) for l in links]
-    return [tuple([s[0] + '.T', s[1]]) for s in symbols_list]
+    return symbols_list
+
+
+def appnend_postfix_jp(name, symbol_set_list):
+    if name in ['jpx400', 'nikkei225', 'topix', 'line-a', 'line-b']:
+        return [(t[0] + '.T', t[1]) for t in symbol_set_list]
+    return symbol_set_list
 
 
 def write_to_file(output_dir, market_name, symbol_list, seperator='\n'):
@@ -117,11 +130,9 @@ def write_to_file(output_dir, market_name, symbol_list, seperator='\n'):
 
 
 if __name__ == '__main__':
-    if len(sys.argv)  > 1:
-        if sys.argv[1] in ['-i', '--intermediate']:
-            main(True)
-        else:
-            print("usage: python3 %s [-i|--intermediate]" % sys.argv[0])
-    else:
-        main()
+    if len(sys.argv) > 1:
+        if sys.argv[1] == '--full':
+            main(is_full_version=True)
+            exit()
+    main()
 
