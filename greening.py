@@ -4,96 +4,123 @@ import pandas as pd
 import datetime
 import json
 import os
+import sys
 import warnings
 warnings.filterwarnings("ignore")
 
 
-TODAY = datetime.date.today()
+def main(in_dir):
+    green = Green(json_path=os.path.join(in_dir, 'all.json'))
+    green.calculate()
+    green.write_monitor_symbol_list(green.output_dir)
 
 
-def main():
-    cwd = os.getcwd()
-    create_dirs(cwd, 'output', TODAY.strftime("%Y%m%d"))
+class Green(object):
+    def __init__(self, json_path):
+        self.today = datetime.date.today()
+        self.output_dir = self.__create_dirs(os.getcwd(), 'output', self.today.strftime("%Y%m%d"))
 
-    raw_all_tickers = open(os.path.join(cwd, 'intermediate', 'all.json'), 'r', encoding='UTF-8')
-    all_tickers = json.load(raw_all_tickers)
+        self.all = json.load(open(json_path, 'r', encoding='UTF-8'))
+        self.mini = []
+        for data in self.all.values():
+            self.mini += [t[0] for t in data]
 
-    # append '.T' to JP tickers
-    for market in ['jpx400', 'nikkei225', 'topix', 'line-a', 'line-b']:
-        all_tickers[market] = [(t[0] + '.T', t[1]) for t in all_tickers[market]]
+        self.monitor_lists = {}
+        self.img_list = {}
 
-    # bulk
-    for market, data in all_tickers.items():
-        monitor_lists = {
-                'day_long': [],
-                'day_short': [],
-                'week_long': [],
-                'week_short': [],
-                'month_long': [],
-                'month_short': [],
+    def calculate(self):
+        # bulk
+        for market, data in self.all.items():
+            self.monitor_lists[market] = {
+                    'day_long': [],
+                    'day_short': [],
+                    'week_long': [],
+                    'week_short': [],
+                    'month_long': [],
+                    'month_short': [],
+                    }
+            for ticker_set in data:
+                self.__filter_ticker(market, ticker_set[0])
+
+            self.monitor_lists[market] = self.__intersect(self.monitor_lists[market])
+
+    def write_monitor_symbol_list(self, output_dir):
+        for market, data in self.monitor_lists.items():
+            market_dir = self.__create_dirs(output_dir, market)
+            for name, tickers in data.items():
+                if len(tickers) == 0: continue
+                fpath = os.path.join(market_dir, "%s_list.txt" % name)
+                with open(fpath, mode='a') as f:
+                    f.write('\n'.join(tickers))
+
+    def __create_dirs(self, *paths):
+        paths = os.path.join(*paths)
+        os.makedirs(paths, exist_ok=True)
+        return paths
+
+    def __filter_ticker(self, market, ticker):
+        try:
+            # 株価取得（ティッカーシンボル、取得元、開始日、終了日）
+            df = data.DataReader(ticker, 'yahoo', start='1980-01-01', end=self.today)
+
+        except Exception as e:
+            print("ticker: %s\nerror: %s" % (ticker, e))
+
+        # day
+        day = df
+        day_flg = self.__organize_ticker(market, ticker, day['Close'], 'day')
+
+        # week
+        agg_dict = {
+                "Open"  : "first",
+                "High"  : "max",
+                "Low"   : "min",
+                "Close" : "last",
+                "Volume": "sum",
                 }
-        for ticker_set in data:
-            filter_ticker(monitor_lists, ticker_set[0], TODAY)
+        week = df.copy(deep=True).resample("W", loffset=pd.Timedelta(days=-6)).agg(agg_dict)
+        week_flg = self.__organize_ticker(market, ticker, week['Close'], 'week')
 
-        market_dir = os.path.join(cwd, 'output', TODAY.strftime("%Y%m%d"), market)
-        os.makedirs(market_dir, exists=True)
-        write_monitor_symbol_list(monitor_lists, market_dir)
+        # month
+        agg_dict['Adj Close'] = 'last'
+        month = df.copy(deep=True).resample("MS").agg(agg_dict)
+        month_flg = self.__organize_ticker(market, ticker, month['Close'], 'month')
+        self.mini.remove(ticker)
+        print('progress: ', len(self.mini))
+        return day_flg, week_flg, month_flg
 
+    def __organize_ticker(self, market, ticker, price, period):
+        avg_5 = float(price.rolling(window=5).mean().tail(1))
+        avg_20 = float(price.rolling(window=20).mean().tail(1))
+        avg_60 = float(price.rolling(window=60).mean().tail(1))
 
-def create_dirs(*paths):
-    paths = os.path.join(*paths)
-    os.makedirs(paths, exist_ok=True)
+        # ロングトレンド
+        if avg_5 > avg_20 > avg_60:
+            self.monitor_lists[market]["%s_long" % period].append(ticker)
+            return 'long'
+        # ショートトレンド
+        elif avg_5 < avg_20 < avg_60:
+            self.monitor_lists[market]["%s_short" % period].append(ticker)
+            return 'short'
+        return None
 
+    def __intersect(self, li):
+        tmp = {}
+        tmp['day_week_long'] = set(li['day_long']) & set(li['week_long'])
+        tmp['day_month_long'] = set(li['day_long']) & set(li['month_long'])
+        tmp['week_month_long'] = set(li['week_long']) & set(li['month_long'])
+        tmp['day_week_month_long'] = set(li['day_long']) & set(li['week_long']) & set(li['month_long'])
+        tmp['day_week_short'] = set(li['day_short']) & set(li['week_short'])
+        tmp['day_month_short'] = set(li['day_short']) & set(li['month_short'])
+        tmp['week_month_short'] = set(li['week_short']) & set(li['month_short'])
+        tmp['day_week_month_short'] = set(li['day_short']) & set(li['week_short']) & set(li['month_short'])
 
-def filter_ticker(monitor_lists, ticker, end):
-    try:
-        # 株価取得（ティッカーシンボル、取得元、開始日、終了日）
-        df = data.DataReader(ticker, 'yahoo', start='1980-01-01', end=end)
-    except Exception as e:
-        print("ticker: %s\nerror: %s" % (ticker, e))
-
-    # day
-    day = df
-    organize_ticker(monitor_lists, ticker, day['Close'], 'day')
-
-    # week
-    agg_dict = {
-            "Open"  : "first",
-            "High"  : "max",
-            "Low"   : "min",
-            "Close" : "last",
-            "Volume": "sum",
-            }
-    week = df.copy(deep=True).resample("W", loffset=pd.Timedelta(days=-6)).agg(agg_dict)
-    organize_ticker(monitor_lists, ticker, week['Close'], 'week')
-
-    # month
-    agg_dict['Adj Close'] = 'last'
-    month = df.copy(deep=True).resample("MS").agg(agg_dict)
-    organize_ticker(monitor_lists, ticker, month['Close'], 'month')
-
-
-def organize_ticker(monitor_lists, ticker, price, period):
-    avg_5 = float(price.rolling(window=5).mean().tail(1))
-    avg_20 = float(price.rolling(window=20).mean().tail(1))
-    avg_60 = float(price.rolling(window=60).mean().tail(1))
-
-    # ロングトレンド
-    if avg_5 > avg_20 > avg_60:
-        monitor_lists["%s_long" % period].append(ticker)
-    # ショートトレンド
-    elif avg_5 < avg_20 < avg_60:
-        monitor_lists["%s_short" % period].append(ticker)
-
-
-def write_monitor_symbol_list(monitor_lists, output_dir):
-    for name, tickers in monitor_lists.items():
-        if len(tickers) == 0: return
-        fpath = os.path.join(output_dir, "%s_list.txt" % name)
-        with open(fpath, mode='a') as f:
-            f.write('\n'.join(tickers))
+        for name, value in tmp.items():
+            if len(value) > 0:
+                li[name] = list(value)
+        return li
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1])
 
