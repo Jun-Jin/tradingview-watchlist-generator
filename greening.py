@@ -21,6 +21,7 @@ class Green(object):
         self.today = datetime.date.today()
         self.csv_dir = self.__create_dirs(os.getcwd(), 'csv', self.today.strftime("%Y%m%d"))
         self.img_dir = self.__create_dirs(os.getcwd(), 'img', self.today.strftime("%Y%m%d"))
+        self.img_start_date = self.today - datetime.timedelta(days=365)
 
         self.all = json.load(open(json_path, 'r', encoding='UTF-8'))
         self.mini = []
@@ -72,8 +73,8 @@ class Green(object):
 
         # day
         day = df
-        day_means = self.__get_means(day['Close'])
-        self.__export_svg(ticker, 'day', day_means, day.index)
+        day_means = self.__get_means(day['Close'], 246)
+        self.__export_svg(ticker, 'day', day_means)
         self.__extract_trend(market, ticker, 'day', day_means)
 
         # week
@@ -85,25 +86,25 @@ class Green(object):
                 "Volume": "sum",
                 }
         week = df.copy(deep=True).resample("W", loffset=pd.Timedelta(days=-6)).agg(agg_dict)
-        week_means = self.__get_means(week['Close'])
-        self.__export_svg(ticker, 'week', week_means, week.index)
+        week_means = self.__get_means(week['Close'], 52)
+        self.__export_svg(ticker, 'week', week_means)
         self.__extract_trend(market, ticker, 'week', week_means)
 
 
         # month
         agg_dict['Adj Close'] = 'last'
         month = df.copy(deep=True).resample("MS").agg(agg_dict)
-        month_means = self.__get_means(month['Close'])
-        self.__export_svg(ticker, 'month', month_means, month.index)
+        month_means = self.__get_means(month['Close'], 12)
+        self.__export_svg(ticker, 'month', month_means)
         self.__extract_trend(market, ticker, 'month', month_means)
 
         self.__stdout_progress(ticker)
 
-    def __get_means(self, price):
+    def __get_means(self, price, count):
         return [
-                price.rolling(window=5).mean(),
-                price.rolling(window=20).mean(),
-                price.rolling(window=60).mean(),
+                price.rolling(window=5).mean().tail(count),
+                price.rolling(window=20).mean().tail(count),
+                price.rolling(window=60).mean().tail(count),
                 ]
 
     def __extract_trend(self, market, ticker, period, means):
@@ -120,11 +121,11 @@ class Green(object):
         elif last_5 < last_20 < last_60:
             self.monitor_dict[market]["%s_short" % period].append(ticker)
 
-    def __export_svg(self, ticker, period, means, date):
+    def __export_svg(self, ticker, period, means):
         plt.figure(figsize=(16,8))
-        plt.plot(date,means[0],label='sma: 5')
-        plt.plot(date,means[1],label='sma: 20')
-        plt.plot(date,means[2],label='sma: 60')
+        plt.plot(means[0].index, means[0], label='sma: 5', color='red')
+        plt.plot(means[1].index, means[1], label='sma: 20', color='green')
+        plt.plot(means[2].index, means[2], label='sma: 60', color='blue')
         plt.legend(loc='upper left')
         img_path = os.path.join(self.img_dir, "%s_%s.svg" % (ticker, period))
         plt.savefig(img_path)
