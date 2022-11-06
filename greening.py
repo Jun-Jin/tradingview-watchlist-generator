@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 from pandas_datareader import data
 import pandas as pd
 
@@ -12,26 +13,27 @@ warnings.filterwarnings("ignore")
 def main(in_dir):
     green = Green(json_path=os.path.join(in_dir, 'all.json'))
     green.calculate()
-    green.write_monitor_symbol_list(green.output_dir)
+    green.write_monitor_symbol_list(green.csv_dir)
 
 
 class Green(object):
     def __init__(self, json_path):
         self.today = datetime.date.today()
-        self.output_dir = self.__create_dirs(os.getcwd(), 'output', self.today.strftime("%Y%m%d"))
+        self.csv_dir = self.__create_dirs(os.getcwd(), 'csv', self.today.strftime("%Y%m%d"))
+        self.img_dir = self.__create_dirs(os.getcwd(), 'img', self.today.strftime("%Y%m%d"))
 
         self.all = json.load(open(json_path, 'r', encoding='UTF-8'))
         self.mini = []
         for data in self.all.values():
             self.mini += [t[0] for t in data]
 
-        self.monitor_lists = {}
-        self.img_list = {}
+        self.monitor_dict = {}
+        self.web_dict = {}
 
     def calculate(self):
         # bulk
         for market, data in self.all.items():
-            self.monitor_lists[market] = {
+            self.monitor_dict[market] = {
                     'day_long': [],
                     'day_short': [],
                     'week_long': [],
@@ -42,14 +44,16 @@ class Green(object):
             for ticker_set in data:
                 self.__filter_ticker(market, ticker_set[0])
 
-            self.monitor_lists[market] = self.__intersect(self.monitor_lists[market])
+            self.monitor_dict[market] = self.__intersect(self.monitor_dict[market])
 
     def write_monitor_symbol_list(self, output_dir):
-        for market, data in self.monitor_lists.items():
+        for market, data in self.monitor_dict.items():
             market_dir = self.__create_dirs(output_dir, market)
             for name, tickers in data.items():
                 if len(tickers) == 0: continue
                 fpath = os.path.join(market_dir, "%s_list.txt" % name)
+                if market in ['jpx400', 'nikkei225', 'topix', 'line-a', 'line-b']:
+                    tickers = ['TSE:' + t.replace('.T','') for t in tickers]
                 with open(fpath, mode='a') as f:
                     f.write('\n'.join(tickers))
 
@@ -68,7 +72,9 @@ class Green(object):
 
         # day
         day = df
-        day_flg = self.__organize_ticker(market, ticker, day['Close'], 'day')
+        day_means = self.__get_means(day['Close'])
+        self.__export_svg(ticker, 'day', day_means, day.index)
+        self.__extract_trend(market, ticker, 'day', day_means)
 
         # week
         agg_dict = {
@@ -79,46 +85,69 @@ class Green(object):
                 "Volume": "sum",
                 }
         week = df.copy(deep=True).resample("W", loffset=pd.Timedelta(days=-6)).agg(agg_dict)
-        week_flg = self.__organize_ticker(market, ticker, week['Close'], 'week')
+        week_means = self.__get_means(week['Close'])
+        self.__export_svg(ticker, 'week', week_means, week.index)
+        self.__extract_trend(market, ticker, 'week', week_means)
+
 
         # month
         agg_dict['Adj Close'] = 'last'
         month = df.copy(deep=True).resample("MS").agg(agg_dict)
-        month_flg = self.__organize_ticker(market, ticker, month['Close'], 'month')
-        self.mini.remove(ticker)
-        print('progress: ', len(self.mini))
-        return day_flg, week_flg, month_flg
+        month_means = self.__get_means(month['Close'])
+        self.__export_svg(ticker, 'month', month_means, month.index)
+        self.__extract_trend(market, ticker, 'month', month_means)
 
-    def __organize_ticker(self, market, ticker, price, period):
-        avg_5 = float(price.rolling(window=5).mean().tail(1))
-        avg_20 = float(price.rolling(window=20).mean().tail(1))
-        avg_60 = float(price.rolling(window=60).mean().tail(1))
+        self.__stdout_progress(ticker)
 
-        # ロングトレンド
-        if avg_5 > avg_20 > avg_60:
-            self.monitor_lists[market]["%s_long" % period].append(ticker)
-            return 'long'
-        # ショートトレンド
-        elif avg_5 < avg_20 < avg_60:
-            self.monitor_lists[market]["%s_short" % period].append(ticker)
-            return 'short'
-        return None
+    def __get_means(self, price):
+        return [
+                price.rolling(window=5).mean(),
+                price.rolling(window=20).mean(),
+                price.rolling(window=60).mean(),
+                ]
+
+    def __extract_trend(self, market, ticker, period, means):
+
+        # take last value to check long & short
+        last_5 = float(means[0].tail(1))
+        last_20 = float(means[1].tail(1))
+        last_60 = float(means[2].tail(1))
+
+        # long trend
+        if last_5 > last_20 > last_60:
+            self.monitor_dict[market]["%s_long" % period].append(ticker)
+        # short trend
+        elif last_5 < last_20 < last_60:
+            self.monitor_dict[market]["%s_short" % period].append(ticker)
+
+    def __export_svg(self, ticker, period, means, date):
+        plt.figure(figsize=(16,8))
+        plt.plot(date,means[0],label='sma: 5')
+        plt.plot(date,means[1],label='sma: 20')
+        plt.plot(date,means[2],label='sma: 60')
+        plt.legend(loc='upper left')
+        img_path = os.path.join(self.img_dir, "%s_%s.svg" % (ticker, period))
+        plt.savefig(img_path)
 
     def __intersect(self, li):
         tmp = {}
         tmp['day_week_long'] = set(li['day_long']) & set(li['week_long'])
         tmp['day_month_long'] = set(li['day_long']) & set(li['month_long'])
         tmp['week_month_long'] = set(li['week_long']) & set(li['month_long'])
-        tmp['day_week_month_long'] = set(li['day_long']) & set(li['week_long']) & set(li['month_long'])
+        tmp['day_week_month_long'] = tmp['day_week_long'] & set(li['month_long'])
         tmp['day_week_short'] = set(li['day_short']) & set(li['week_short'])
         tmp['day_month_short'] = set(li['day_short']) & set(li['month_short'])
         tmp['week_month_short'] = set(li['week_short']) & set(li['month_short'])
-        tmp['day_week_month_short'] = set(li['day_short']) & set(li['week_short']) & set(li['month_short'])
+        tmp['day_week_month_short'] = tmp['day_week_short'] & set(li['month_short'])
 
         for name, value in tmp.items():
             if len(value) > 0:
                 li[name] = list(value)
         return li
+
+    def __stdout_progress(self, ticker):
+        self.mini.remove(ticker)
+        print('progress: ', len(self.mini))
 
 
 if __name__ == "__main__":

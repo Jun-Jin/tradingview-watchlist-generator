@@ -1,4 +1,5 @@
 *.txt
 !readme.txt
-output/*
+csv/*
+img/*
 intermediate/*
