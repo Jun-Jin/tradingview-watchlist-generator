@@ -21,6 +21,7 @@ class Green(object):
         self.today = datetime.date.today()
         self.csv_dir = self.__create_dirs(os.getcwd(), 'csv', self.today.strftime("%Y%m%d"))
         self.img_dir = self.__create_dirs(os.getcwd(), 'img', self.today.strftime("%Y%m%d"))
+        self.data_start_date = self.today - datetime.timedelta(days=365 * 5)
         self.img_start_date = self.today - datetime.timedelta(days=365)
 
         self.all = json.load(open(json_path, 'r', encoding='UTF-8'))
@@ -66,7 +67,7 @@ class Green(object):
     def __filter_ticker(self, market, ticker):
         try:
             # 株価取得（ティッカーシンボル、取得元、開始日、終了日）
-            df = data.DataReader(ticker, 'yahoo', start='1980-01-01', end=self.today)
+            df = data.DataReader(ticker, 'yahoo', start=self.data_start_date, end=self.today)
 
         except Exception as e:
             print("ticker: %s\nerror: %s" % (ticker, e))
