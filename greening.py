@@ -11,7 +11,7 @@ warnings.filterwarnings("ignore")
 
 
 def main(in_dir):
-    green = Green(json_path=os.path.join(in_dir, 'all.json'))
+    green = Green(json_path=os.path.join(in_dir, 'one.json'))
     green.calculate()
     green.write_monitor_symbol_list(green.csv_dir)
 
