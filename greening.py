@@ -1,3 +1,6 @@
+from bs4 import BeautifulSoup
+import pandas as pd
+import requests
 import matplotlib.pyplot as plt
 from pandas_datareader import data
 import pandas as pd
@@ -5,32 +8,94 @@ import pandas as pd
 import datetime
 import json
 import os
+from operator import itemgetter
 import sys
+import unicodedata
 import warnings
 warnings.filterwarnings("ignore")
 
 
-def main(in_dir):
-    green = Green(json_path=os.path.join(in_dir, 'one.json'))
+def main():
+    green = Green(src_dir=os.path.join(os.getcwd(), 'resources', 'market'))
     green.calculate()
     green.write_monitor_symbol_list(green.csv_dir)
 
 
 class Green(object):
-    def __init__(self, json_path):
+    def __init__(self, src_dir, is_full_version=False):
+        # input files
+        self.standard = json.load(open(os.path.join(src_dir, 'standard.json'), 'r'))
+        if is_full_version:
+            self.line = json.load(open(os.path.join(src_dir, 'line.json'), 'r'))
+
+        # date values for calculation
         self.today = datetime.date.today()
-        self.csv_dir = self.__create_dirs(os.getcwd(), 'csv', self.today.strftime("%Y%m%d"))
-        self.img_dir = self.__create_dirs(os.getcwd(), 'img', self.today.strftime("%Y%m%d"))
         self.data_start_date = self.today - datetime.timedelta(days=365 * 5)
         self.img_start_date = self.today - datetime.timedelta(days=365)
 
-        self.all = json.load(open(json_path, 'r', encoding='UTF-8'))
-        self.mini = []
-        for data in self.all.values():
-            self.mini += [t[0] for t in data]
+        # output files
+        self.csv_dir = self.__create_dirs(os.getcwd(), 'csv', self.today.strftime("%Y%m%d"))
+        self.img_dir = self.__create_dirs(os.getcwd(), 'img', self.today.strftime("%Y%m%d"))
 
+        # output variables
+        self.all, self.mini = self.get_all_symbols()
         self.monitor_dict = {}
-        self.web_dict = {}
+
+    def get_all_symbols(self, is_full_version=False):
+        self.all = {}
+        self.mini = set()
+
+        # stock every market from table html
+        __rich_len = 0
+        for name, info in self.standard.items():
+            self.all[name] = self.get_symbol_list_from_table_html(name, info)
+            __rich_len += len(self.all[name])
+            self.all[name] = self.appnend_postfix_jp(name, self.all[name])
+            self.mini |= set([t[0] for t in self.all[name]])
+
+        # stock every market from table html
+        if is_full_version:
+            for name, info in self.line.items():
+                self.all[name] = self.get_symbol_list_from_raw_html(info)
+                self.all[name] = self.appnend_postfix_jp(name, self.all[name])
+
+        print("self.all include %d tickers" % __rich_len)
+        print("self.mini include %d tickers" % len(self.mini))
+        return self.all, self.mini
+
+    def get_symbol_list_from_table_html(self, name, info):
+        url, columns = itemgetter('url', 'columns')(info)
+
+        tb_list = pd.read_html(url)
+        # get table
+        if name == 'topix':
+            tb = pd.concat(tb_list[1:3])
+        elif name == 'sp500':
+            tb = tb_list[0]
+        elif name == 'nasdaq100':
+            tb = tb_list[4]
+        else:
+            tb = tb_list[1]
+
+        tb = tb[columns].astype(str)
+        return list(map(tuple, tb.to_numpy()))
+
+    def get_symbol_list_from_raw_html(self, info):
+        url, indices = itemgetter('url', 'indices')(info)
+
+        r = requests.get(url)
+        if r.status_code != 200:
+            print("Error fetching page")
+            exit()
+        soup = BeautifulSoup(r.content, "html.parser")
+        links = soup.find_all('a')[slice(*indices)]
+        symbols_list = [tuple(unicodedata.normalize("NFKD", l.string).split(' / ')) for l in links]
+        return symbols_list
+
+    def appnend_postfix_jp(self, name, symbol_set_list):
+        if name in ['jpx400', 'nikkei225', 'topix', 'line-a', 'line-b']:
+            return [(t[0] + '.T', t[1]) for t in symbol_set_list]
+        return symbol_set_list
 
     def calculate(self):
         # bulk
@@ -148,10 +213,10 @@ class Green(object):
         return li
 
     def __stdout_progress(self, ticker):
-        self.mini.remove(ticker)
+        self.mini.discard(ticker)
         print('progress: ', len(self.mini))
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main()
 
