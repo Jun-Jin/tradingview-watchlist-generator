@@ -1,17 +1,19 @@
+from pandas_datareader import data  as pdr
 from bs4 import BeautifulSoup
 import pandas as pd
 import requests
 import matplotlib.pyplot as plt
-from pandas_datareader import data
 import pandas as pd
 
 import datetime
 import json
 import os
 from operator import itemgetter
-import sys
 import unicodedata
 import warnings
+import yfinance as yf
+yf.pdr_override()
+import datetime as dt
 warnings.filterwarnings("ignore")
 
 
@@ -132,7 +134,7 @@ class Green(object):
     def __filter_ticker(self, market, ticker):
         try:
             # 株価取得（ティッカーシンボル、取得元、開始日、終了日）
-            df = data.DataReader(ticker, 'yahoo', start=self.data_start_date, end=self.today)
+            df = pdr.get_data_yahoo(ticker, start=self.data_start_date, end=self.today)
 
         except Exception as e:
             print("ticker: %s\nerror: %s" % (ticker, e))
